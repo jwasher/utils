@@ -1,0 +1,38 @@
+#!/usr/bin/perl -w
+#Author: James Washer washer@trlp.com
+use constant VERSION => '$Revision: 1.3 $';
+
+#bgrep:: Block based grep utility. Search for a pattern in a block of text.
+#dumps entire block if match found
+#sort of like csplit and grep combined into one utility.
+
+use strict;
+
+my @data;
+my $interesting;
+my $saw_seperator; #just to avoid end case where we never saw a seperator;
+
+
+die "bgrep.pl ", VERSION,"\n" if (1==@ARGV && "-v" eq $ARGV[0]);
+die "Usage bgrep.pl block_seperator_regex grep_search_regex\n" unless 2==@ARGV; #Must have at least 2 arguments
+my ($seperator,$search)=  @ARGV;
+@ARGV=();
+while (<>){
+        if ( /$seperator/){
+                $saw_seperator++; #This is just used to handle the end-of-file case where we may never have seen the beginning seperator
+                #We're about to start a new block, so process previous
+                process() if $interesting;
+                @data=(); #clear out our stored data to be ready for next block
+                $interesting=0; #nothing interesting yet, since new block
+        }
+        $interesting++ if /$search/; #mark this block interesting if match
+        push @data, $_;
+}
+process() if ($saw_seperator &&$interesting); #one last time for end of file
+
+sub process{
+	#Generally, we just print this "interesting" block
+	#but feel free to munge on this block if needed
+        print foreach ( @data);
+}
+
