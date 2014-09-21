@@ -1,0 +1,116 @@
+#!/usr/bin/perl -w
+#Author: James Washer washer@us.ibm.com
+
+use strict;
+use Getopt::Std;
+
+use constant VERSION=>'$Version$';
+
+my $splitascii="";
+
+use vars qw( $opt_h $opt_a $opt_v $opt_t  $opt_b $opt_l $opt_s $opt_o);
+
+getopts ('hvt:b:l:s:o:');
+
+my @chars;
+for(my $x=0;$x<0x100;$x++){ $chars[$x]="."};
+for(my $x=0x20;$x<0x7f;$x++){ $chars[$x]=chr($x)};
+$opt_t ||="l";
+$opt_o ||="h";
+$opt_b ||=1024;#standard block size. Change via -b argument
+$opt_a ||=1; #can be turned off via switch
+$opt_l ||=16;#standard width size. Change with -w argument
+exit help() if $opt_h;
+
+die "$0: Version=".VERSION."\n" if $opt_v;
+sub help{print << 'EOF';
+	USAGE: hd HexDump utility
+	-t b(byte) w(word) l(long) q(quad) (defaults to 'l')
+	-l width (bytes per line)
+	-b blksize eg 1024 1k 1K 10K 4M
+	-s skipcnt (in blocks)
+	-a (0|1) prints asci (default==1)
+	-o [odhn] (octal decimal hex none)
+EOF
+;}
+
+
+my %kibimibi=(  k => 1024, K => 1024, m => (1024*1024),  m => (1024*1024), 1 => 1);
+my ($dec,$multiplier);
+die "illegal blksize specification... legal are #[kKmM]" 
+	unless ($dec,$multiplier)= $opt_b =~ m/(\d+)([kKmM]?)$/;
+$multiplier ||="1";
+
+$opt_b=$dec * $kibimibi{$multiplier};
+#print "block size is $opt_b\n";
+
+
+
+my $nullstr="\000"x$opt_l;
+my %offset_fmt = (
+			o => "%12.12o: ",
+			d => "%12.12d: ",
+			h => "%8.8x: ",
+			n => "",
+		);
+my %otype = (	b => ["%2.2x "x	($opt_l/1),"C"x ($opt_l / 1),0],
+		w => ["%4.4x "x	($opt_l/2),"S"x ($opt_l / 2),1],
+		l => ["%8.8x "x	($opt_l/4),"L"x ($opt_l / 4),3],
+		q => ["%16.16x "x ($opt_l/8),"Q"x ($opt_l / 8),7],
+		);
+
+die ("illegal offset format ($opt_o) please specify o=octal d=decimal h=hex n=none\n")
+	unless defined $offset_fmt{$opt_o};
+die ("illegal line size ($opt_l) for output type $opt_t\n") if ($opt_l & $otype{$opt_t}->[2]);
+die ("blksz must be integer multiple of $opt_l\n") if $opt_b & ($opt_l-1);
+
+
+
+
+my $file_offset=0;
+my $infile=$ARGV[0];
+
+open IN, $infile or die "Unable to open $infile";
+binmode IN;
+
+my @values;
+my $buffer;
+my $x;
+my $cnt;
+my $last_cnt;
+
+while( $cnt=read ( IN, $buffer, $opt_b)){
+	#skipping some number of blocks?
+	if ($opt_s){
+		$opt_s--;
+		$file_offset+=$opt_b;
+		next;
+	}
+	$buffer.=$nullstr;
+	for($x=0;$x<$cnt;$x += $opt_l){
+		my $str= substr $buffer, $x, $opt_l;
+		@values= unpack $otype{$opt_t}->[1], $str;
+		printf $offset_fmt{$opt_o},$file_offset;
+		$file_offset+=$opt_l;
+		printf $otype{$opt_t}->[0], @values;
+		show_ascii($str) if ($opt_a);
+		print "\n";
+	$last_cnt=$cnt;
+	}
+}
+if ($x>$last_cnt){
+	my $pad=$x-$last_cnt;
+	print "Padded last $pad bytes \n";
+}
+
+sub show_ascii{
+	my $value=shift;
+	print "   ";
+	for (my $x=0;$x<$opt_l;$x+= $otype{$opt_t}->[2]+1){
+		my $str= substr $value, $x, $otype{$opt_t}->[2]+1;
+		my @vchars=unpack "C"x ($otype{$opt_t}->[2]+1),$str;
+		my @pchars = map { $chars[$_] }@vchars;
+		printf "%s"x  ($otype{$opt_t}->[2]+1).$splitascii , @pchars;
+		
+	}
+}
